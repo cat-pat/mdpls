@@ -368,12 +368,38 @@ fn deserialize_opt_command<'de, D>(
 where
     D: Deserializer<'de>,
 {
-    // serde#723
-    #[derive(Deserialize)]
-    struct Wrapper(#[serde(deserialize_with = "deserialize_command")] (String, Vec<String>));
+    struct OptionCommandVisitor;
 
-    let v = Option::deserialize(deserializer)?;
-    Ok(v.map(|Wrapper(command)| command))
+    impl<'de> Visitor<'de> for OptionCommandVisitor {
+        type Value = Option<(String, Vec<String>)>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("a command string or sequence of strings")
+        }
+
+        fn visit_some<DE>(self, deserializer: DE) -> Result<Self::Value, DE::Error>
+        where
+            DE: Deserializer<'de>,
+        {
+            deserialize_command(deserializer).map(Some)
+        }
+
+        fn visit_none<E>(self) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(None)
+        }
+
+        fn visit_unit<E>(self) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(None)
+        }
+    }
+
+    deserializer.deserialize_option(OptionCommandVisitor)
 }
 
 #[cfg(test)]
@@ -470,6 +496,23 @@ mod tests {
         let settings = Settings::deserialize(json)?;
 
         assert_eq!(settings.theme, "darcula");
+
+        Ok(())
+    }
+
+    #[test]
+    fn deserialize_renderer_null() -> Result<(), Box<dyn Error>> {
+        let json = json!({
+            "markdown": {
+                "preview": {
+                    "renderer": null
+                }
+            }
+        });
+
+        let settings = Settings::deserialize(json)?;
+
+        assert_eq!(settings.renderer, None);
 
         Ok(())
     }
